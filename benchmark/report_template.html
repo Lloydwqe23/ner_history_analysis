@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NER highlights</title>
+<style>
+:root{--bg:#fafaf7;--panel:#fff;--ink:#1d1d1b;--mute:#6b6a64;--line:#dedcd3;
+--gold:#cfe3ff;--exact:#b6e7b0;--partial:#dff4d8;--fp:#ffc4c0;--missed:#ffe58a;--sus:#ffd2a1;--accent:#2f5d9e}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17171a;--panel:#202024;--ink:#ecebe6;--mute:#9a998f;--line:#35353b;
+--gold:#26456f;--exact:#2c5a2a;--partial:#27411f;--fp:#6b2a27;--missed:#6a5712;--sus:#6d4318;--accent:#7fb0f2}}
+:root[data-theme=dark]{--bg:#17171a;--panel:#202024;--ink:#ecebe6;--mute:#9a998f;--line:#35353b;
+--gold:#26456f;--exact:#2c5a2a;--partial:#27411f;--fp:#6b2a27;--missed:#6a5712;--sus:#6d4318;--accent:#7fb0f2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:var(--panel)}
+h1{font-size:16px;margin:0;font-weight:600}select{font:inherit;padding:4px 8px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 16px;font-size:13px;color:var(--mute);border-bottom:1px solid var(--line)}
+.legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:var(--c);border:1px solid var(--line)}
+.layout{display:grid;grid-template-columns:300px 1fr;min-height:70vh}
+nav{border-right:1px solid var(--line);padding:8px;overflow:auto;max-height:calc(100vh - 120px);position:sticky;top:0;align-self:start}
+nav h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:12px 6px 4px}
+nav button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--ink);padding:6px 8px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
+nav button:hover{background:var(--line)}nav button[aria-selected=true]{background:var(--accent);color:#fff}
+nav .f1{float:right;color:var(--mute);font-variant-numeric:tabular-nums}nav button[aria-selected=true] .f1{color:#fff}
+main{padding:16px;min-width:0}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.chip{padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:13px}
+.title{font-weight:600;margin:0 0 8px;overflow-wrap:anywhere}
+.text{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;font-family:Georgia,"Times New Roman",serif;font-size:16px}
+mark{color:inherit;border-radius:3px;padding:1px 0;text-decoration:underline;text-underline-offset:3px}
+mark.gold{background:var(--gold);text-decoration-color:#2f6fd0}mark.exact{background:var(--exact);text-decoration-color:#2f9e2a}
+mark.partial{background:var(--partial);text-decoration:underline dashed #2f9e2a;text-underline-offset:3px}
+mark.fp{background:var(--fp);text-decoration-color:#d03a32}mark.missed{background:var(--missed);text-decoration-color:#c79a00}
+mark.sus{background:var(--sus);text-decoration-color:#d9731a}
+.note{color:var(--mute);font-size:13px;margin-top:10px}
+@media (max-width:760px){.layout{grid-template-columns:1fr}nav{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<header><h1>Gold names vs. what each model found</h1>
+<label>Page <select id="page"></select></label></header>
+<div class="legend">
+<span style="--c:var(--gold)">gold annotation</span><span style="--c:var(--exact)">model = gold</span>
+<span style="--c:var(--partial)">overlaps gold, boundaries differ</span><span style="--c:var(--fp)">not in gold (false positive)</span>
+<span style="--c:var(--missed)">gold name the model missed</span><span style="--c:var(--sus)">found by several models, not in gold (check the gold!)</span></div>
+<div class="layout"><nav id="nav"></nav><main><div id="stats" class="stats"></div><p class="title" id="title"></p><div id="text" class="text"></div><p class="note" id="note"></p></main></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D=JSON.parse(document.getElementById('data').textContent);
+const CATS=[["gold","Gold"],["original","Original models (as published)"],["modified","Modified (our inference changes)"],["hybrid","Hybrids (ensembles)"],["sus","Check the gold"]];
+let page=D.default_page,tab="__gold__";
+const $=id=>document.getElementById(id);
+const f=x=>x.toFixed(2);
+function tabsFor(cat){return cat==="gold"?[["__gold__","Gold annotation",null]]:cat==="sus"?[["__sus__","Found by ≥"+D.suspect_min+" models, absent in gold",null]]:D.models.filter(m=>m.cat===cat).map(m=>[m.name,m.name,m]);}
+function buildNav(){const nav=$('nav');nav.innerHTML='';
+ for(const [cat,label] of CATS){const ts=tabsFor(cat);if(!ts.length)continue;
+  const h=document.createElement('h2');h.textContent=label+(cat==="original"||cat==="modified"||cat==="hybrid"?" ("+ts.length+")":"");nav.appendChild(h);
+  for(const [id,name,m] of ts){const b=document.createElement('button');b.setAttribute('role','tab');b.setAttribute('aria-selected',id===tab);
+   b.innerHTML='<span></span>'+(m?'<span class="f1" title="F1 partial / exact on all pages">'+f(m.f1_part)+' / '+f(m.f1_ex)+'</span>':'');b.firstChild.textContent=name;
+   b.onclick=()=>{tab=id;render()};nav.appendChild(b);}}}
+function paint(text,segs){const box=$('text');box.textContent='';let pos=0;
+ for(const [s,e,c,t] of segs){if(s>pos)box.appendChild(document.createTextNode(text.slice(pos,s)));
+  const m=document.createElement('mark');m.className=c;m.title=t;m.textContent=text.slice(s,e);box.appendChild(m);pos=e;}
+ if(pos<text.length)box.appendChild(document.createTextNode(text.slice(pos)));}
+function chip(t){const c=document.createElement('span');c.className='chip';c.textContent=t;$('stats').appendChild(c);}
+function render(){const P=D.pages[page];buildNav();$('stats').innerHTML='';$('note').textContent='';
+ $('title').textContent=P.name+' — '+P.n_gold+' gold names';
+ if(tab==="__gold__"){paint(P.text,P.gold);chip(P.n_gold+' gold names');}
+ else if(tab==="__sus__"){paint(P.text,P.suspects);chip(P.suspects.length+' places');$('note').textContent='Orange = at least '+D.suspect_min+' different single models marked this as a person, but no gold annotation is there. Either all of them are wrong, or the gold is missing a name.';}
+ else{const r=P.models[tab];paint(P.text,r.segs);
+  chip('exact '+r.exact);chip('overlap '+r.partial);chip('false positives '+r.fp);chip('missed '+r.missed);
+  if(r.unlocated)$('note').textContent=r.unlocated+' predicted string(s) could not be located in this page text and are not painted.';}}
+D.pages.forEach((p,i)=>{const o=document.createElement('option');o.value=i;o.textContent=p.name;$('page').appendChild(o)});
+$('page').value=page;$('page').onchange=e=>{page=+e.target.value;render()};
+document.addEventListener('keydown',e=>{if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
+ const ids=['__gold__',...D.models.map(m=>m.name),'__sus__'];let i=ids.indexOf(tab)+(e.key==='ArrowDown'?1:-1);
+ if(i<0||i>=ids.length)return;tab=ids[i];e.preventDefault();render();});
+render();
+</script></body></html>

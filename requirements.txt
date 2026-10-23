@@ -1,0 +1,7 @@
+# Colab:  !pip install -q -r requirements.txt   and then   !pip install -U gliner
+transformers
+torch
+gliner
+spacy
+spacy-transformers
+huggingface_hub
